@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta http-equiv="Content-Security-Policy" content="default-src * self blob: data: gap:; style-src * self 'unsafe-inline' blob: data:; script-src * self 'unsafe-inline' 'unsafe-eval' blob: data:; object-src * self blob: data:;">
+<title>NetPulse — Multi-File Connector</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: linear-gradient(145deg, #0a0e1a 0%, #1a1f2f 100%);
+    color: #e0e6ff;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px;
+}
+.container {
+    max-width: 460px;
+    width: 100%;
+    background: rgba(20, 25, 45, 0.85);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(100, 140, 255, 0.15);
+    border-radius: 28px;
+    padding: 28px 24px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.05);
+    margin-top: 20px;
+}
+h1 {
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: -0.3px;
+    background: linear-gradient(135deg, #8ab4ff, #c084fc);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 4px;
+}
+.sub { font-size: 13px; color: #7a85b0; margin-bottom: 20px; }
+.status-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(255,255,255,0.03);
+    border-radius: 14px;
+    padding: 12px 16px;
+    margin-bottom: 12px;
+    border: 1px solid rgba(255,255,255,0.04);
+}
+.dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: #444; flex-shrink: 0;
+    transition: background 0.3s;
+}
+.dot.active { background: #4ade80; box-shadow: 0 0 12px #4ade8066; }
+.dot.error { background: #f87171; box-shadow: 0 0 12px #f8717166; }
+.dot.connecting { background: #fbbf24; box-shadow: 0 0 12px #fbbf2466; animation: pulse 0.8s infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+.status-label { font-size: 14px; flex: 1; }
+.badge {
+    font-size: 11px; padding: 3px 10px; border-radius: 20px;
+    background: rgba(100,140,255,0.12); color: #8ab4ff;
+}
+.btn {
+    width: 100%; padding: 14px; border: none; border-radius: 14px;
+    font-size: 15px; font-weight: 600; cursor: pointer;
+    background: linear-gradient(135deg, #3b6eff, #7c3aed);
+    color: #fff; transition: all 0.25s; margin-top: 6px;
+    box-shadow: 0 4px 20px rgba(59,110,255,0.25);
+}
+.btn:hover { transform: translateY(-1px); box-shadow: 0 6px 28px rgba(59,110,255,0.35); }
+.btn:active { transform: scale(0.97); }
+.btn.secondary {
+    background: rgba(255,255,255,0.06);
+    box-shadow: none; margin-top: 8px;
+    color: #b0bae0;
+}
+.btn.secondary:hover { background: rgba(255,255,255,0.1); }
+.file-list { margin: 12px 0; }
+.file-item {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 14px; border-radius: 10px;
+    background: rgba(255,255,255,0.03); margin-bottom: 6px;
+    font-size: 13px; border: 1px solid rgba(255,255,255,0.04);
+}
+.file-item .fname { font-weight: 500; }
+.file-item .fstatus { font-size: 12px; }
+.console {
+    background: #05080f; border-radius: 12px; padding: 12px 14px;
+    margin-top: 14px; font-family: 'Courier New', monospace;
+    font-size: 12px; color: #6b8aff; max-height: 140px; overflow-y: auto;
+    border: 1px solid rgba(100,140,255,0.08); line-height: 1.6;
+}
+.console .log-error { color: #f87171; }
+.console .log-success { color: #4ade80; }
+.console .log-info { color: #8ab4ff; }
+.apk-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: rgba(124,58,237,0.15); border: 1px solid rgba(124,58,237,0.2);
+    padding: 4px 12px; border-radius: 20px; font-size: 11px;
+    color: #c084fc; margin-top: 12px;
+}
+.hidden-input { display: none; }
+.footer { font-size: 11px; color: #4a5580; margin-top: 16px; text-align: center; }
+</style>
+</head>
+<body>
+
+<div class="container" id="app">
+    <h1>NetPulse</h1>
+    <div class="sub">Multi-File Connector · APK Bridge</div>
+
+    <!-- Connection Status -->
+    <div class="status-row">
+        <span class="dot" id="connDot"></span>
+        <span class="status-label" id="connLabel">Initializing...</span>
+        <span class="badge" id="connBadge">v1.0</span>
+    </div>
+
+    <!-- Auto-Connect / File Injection -->
+    <div class="file-list" id="fileList"></div>
+
+    <!-- Trigger manual scan for HTML files -->
+    <button class="btn" id="scanBtn">🔍 Scan & Connect All HTML Files</button>
+    <button class="btn secondary" id="injectBtn">📦 Inject APK Payload</button>
+    <button class="btn secondary" id="clearBtn">🗑 Clear Console</button>
+
+    <!-- APK info badge -->
+    <div class="apk-badge">📱 APK Mode · Single-File Runtime</div>
+
+    <!-- Console -->
+    <div class="console" id="console">
+        <div class="log-info">[system] NetPulse initialized</div>
+        <div class="log-info">[system] Scanning for connected HTML files...</div>
+    </div>
+
+    <!-- Hidden file input for loading external HTML -->
+    <input type="file" id="fileInput" class="hidden-input" accept=".html,.htm" multiple>
+
+    <div class="footer">Authorized pentest use · All connections local</div>
+</div>
+
+<script>
+(function(){
+    'use strict';
+
+    // ===== CORE STATE =====
+    const state = {
+        connectedFiles: [],
+        apkPayloadInjected: false,
+        connectionActive: false,
+        consoleHistory: []
+    };
+
+    // ===== DOM REFS =====
+    const connDot = document.getElementById('connDot');
+    const connLabel = document.getElementById('connLabel');
+    const connBadge = document.getElementById('connBadge');
+    const fileList = document.getElementById('fileList');
+    const consoleEl = document.getElementById('console');
+    const scanBtn = document.getElementById('scanBtn');
+    const injectBtn = document.getElementById('injectBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const fileInput = document.getElementById('fileInput');
+
+    // ===== CONSOLE LOG =====
+    function log(msg, type = 'info') {
+        const div = document.createElement('div');
+        div.className = 'log-' + type;
+        div.textContent = '[' + new Date().toLocaleTimeString() + '] ' + msg;
+        consoleEl.appendChild(div);
+        consoleEl.scrollTop = consoleEl.scrollHeight;
+        state.consoleHistory.push({ msg, type, ts: Date.now() });
+    }
+
+    // ===== UPDATE CONNECTION STATUS =====
+    function setConnection(active) {
+        state.connectionActive = active;
+        connDot.className = 'dot' + (active ? ' active' : ' connecting');
+        connLabel.textContent = active ? 'Connected · ' + state.connectedFiles.length + ' file(s)' : 'Connecting...';
+        if (active) {
+            setTimeout(() => {
+                connDot.className = 'dot active';
+            }, 500);
+        }
+    }
+
+    // ===== RENDER FILE LIST =====
+    function renderFileList() {
+        fileList.innerHTML = '';
+        if (state.connectedFiles.length === 0) {
+            fileList.innerHTML = '<div style="text-align:center;padding:16px;color:#5a6590;font-size:13px;">No HTML files connected yet.<br>Click scan or drop files.</div>';
+            return;
+        }
+        state.connectedFiles.forEach((f, idx) => {
+            const div = document.createElement('div');
+            div.className = 'file-item';
+            const sizeStr = f.size ? (f.size < 1024 ? f.size + ' B' : (f.size/1024).toFixed(1) + ' KB') : '?';
+            div.innerHTML = `
+                <span class="fname">📄 ${f.name}</span>
+                <span class="fstatus">${sizeStr} · ${f.connected ? '✓ synced' : 'pending'}</span>
+            `;
+            fileList.appendChild(div);
+        });
+    }
+
+    // ===== SCAN & CONNECT HTML FILES =====
+    function scanAndConnect() {
+        log('Scanning for available HTML files...', 'info');
+        connDot.className = 'dot connecting';
+        connLabel.textContent = 'Scanning...';
+
+        // Attempt to discover other HTML files via fetch/HEAD
+        const candidates = [];
+        // Common local/dev file patterns
+        const patterns = [
+            'index.html', 'index2.html', 'main.html', 'app.html',
+            'dashboard.html', 'panel.html', 'login.html', 'admin.html',
+            'payload.html', 'bridge.html', 'connect.html', 'sync.html'
+        ];
+
+        let completed = 0;
+        const total = patterns.length;
+
+        patterns.forEach((fname) => {
+            fetch(fname, { method: 'HEAD', mode: 'no-cors', cache: 'no-store' })
+                .then(() => {
+                    // If we get here (even opaque), file likely exists
+                    if (!state.connectedFiles.find(x => x.name === fname)) {
+                        state.connectedFiles.push({
+                            name: fname,
+                            size: 0,
+                            connected: true,
+                            source: 'auto-scan'
+                        });
+                        log('Auto-connected: ' + fname, 'success');
+                    }
+                })
+                .catch(() => {
+                    // File doesn't exist or can't be reached - skip silently
+                })
+                .finally(() => {
+                    completed++;
+                    if (completed >= total) {
+                        finalizeScan();
+                    }
+                });
+        });
+
+        // Also try to discover via service worker / parent references
+        try {
+            if (window.parent && window.parent !== window) {
+                log('Detected iframe context — parent window connected', 'success');
+                if (!state.connectedFiles.find(x => x.name === '[parent]')) {
+                    state.connectedFiles.push({
+                        name: '[parent frame]',
+                        size: 0,
+                        connected: true,
+                        source: 'iframe'
+                    });
+                }
+            }
+        } catch(e) {
+            // cross-origin parent access denied
+        }
+
+        // Fallback: if no patterns resolved within 2s, show manual option
+        setTimeout(() => {
+            if (state.connectedFiles.length === 0) {
+                log('No auto-discovered files — use manual upload or retry', 'info');
+                connDot.className = 'dot error';
+                connLabel.textContent = 'No files found';
+                // Trigger file picker as fallback
+                fileInput.click();
+            } else {
+                setConnection(true);
+                renderFileList();
+            }
+        }, 2500);
+
+        function finalizeScan() {
+            if (state.connectedFiles.length > 0) {
+                setConnection(true);
+                log('Scan complete: ' + state.connectedFiles.length + ' file(s) connected', 'success');
+                renderFileList();
+            }
+        }
+    }
+
+    // ===== HANDLE MANUAL FILE UPLOAD =====
+    function handleFileUpload(files) {
+        if (!files || files.length === 0) return;
+        for (let i = 0; i < files.length; i++) {
+            const f = files[i];
+            if (!f.name.endsWith('.html') && !f.name.endsWith('.htm')) {
+                log('Skipped (not HTML): ' + f.name, 'error');
+                continue;
+            }
+            if (state.connectedFiles.find(x => x.name === f.name)) {
+                log('Already connected: ' + f.name, 'info');
+                continue;
+            }
+            state.connectedFiles.push({
+                name: f.name,
+                size: f.size,
+                connected: true,
+                source: 'manual',
+                file: f
+            });
+            log('Connected (manual): ' + f.name + ' (' + (f.size/1024).toFixed(1) + ' KB)', 'success');
+        }
+        if (state.connectedFiles.length > 0) {
+            setConnection(true);
+            renderFileList();
+        }
+    }
+
+    // ===== INJECT APK PAYLOAD =====
+    function injectAPK() {
+        if (state.apkPayloadInjected) {
+            log('APK payload already injected', 'info');
+            return;
+        }
+
+        log('Injecting APK bridge payload...', 'info');
+        connDot.className = 'dot connecting';
+        connLabel.textContent = 'Injecting APK...';
+
+        // APK-style embedded payload metadata
+        const apkManifest = {
+            package: 'com.netpulse.bridge',
+            version: '1.0.0',
+            minSdk: 21,
+            targetSdk: 33,
+            permissions: ['INTERNET', 'ACCESS_NETWORK_STATE', 'READ_EXTERNAL_STORAGE'],
+            mainActivity: '.MainBridgeActivity'
+        };
+
+        // Inject a hidden iframe that simulates APK bridge behavior
+        let bridgeFrame = document.getElementById('apkBridge');
+        if (!bridgeFrame) {
+            bridgeFrame = document.createElement('iframe');
+            bridgeFrame.id = 'apkBridge';
+            bridgeFrame.style.cssText = 'display:none;width:0;height:0;border:none;';
+            document.body.appendChild(bridgeFrame);
+        }
+
+        // Write APK simulation context into the bridge iframe
+        const apkContext = `
+            <!DOCTYPE html>
+            <html>
+            <head><meta charset="UTF-8"></head>
+            <body>
+            <script>
+                // APK Bridge Simulation — Single-File Runtime
+                window.APK_BRIDGE = {
+                    manifest: ${JSON.stringify(apkManifest)},
+                    status: 'loaded',
+                    timestamp: ${Date.now()},
+                    connectedFiles: ${JSON.stringify(state.connectedFiles.map(f => f.name))},
+                    platform: navigator.userAgent,
+                    inject: function(data) {
+                        console.log('[APK Bridge] Data received:', data);
+                        return { status: 'ok', injected: true };
+                    },
+                    requestPermission: function() { return true; },
+                    execShell: function(cmd) { return '[APK] Shell: ' + cmd; }
+                };
+                window.parent.postMessage({ type: 'APK_BRIDGE_READY', payload: '${btoa(JSON.stringify(apkManifest))}' }, '*');
+            <\/script>
+            </body>
+            </html>
+        `;
+
+        bridgeFrame.srcdoc = apkContext;
+        state.apkPayloadInjected = true;
+
+        setTimeout(() => {
+            connDot.className = 'dot active';
+            connLabel.textContent = 'APK Bridge Active · ' + state.connectedFiles.length + ' file(s)';
+            log('APK payload injected successfully', 'success');
+            log('APK Bridge ready — single-file runtime active', 'success');
+        }, 600);
+    }
+
+    // ===== LISTEN FOR CROSS-FILE MESSAGES =====
+    window.addEventListener('message', function(event) {
+        try {
+            const data = event.data;
+            if (data && data.type === 'APK_BRIDGE_READY') {
+                log('APK bridge handshake received from child frame', 'success');
+                // Auto-connect the source
+                const src = event.source?.location?.href || '[child frame]';
+                if (!state.connectedFiles.find(x => x.name === src)) {
+                    state.connectedFiles.push({ name: src, size: 0, connected: true, source: 'bridge-handshake' });
+                    renderFileList();
+                }
+                setConnection(true);
+            } else if (data && data.type === 'FILE_SYNC') {
+                log('File sync signal received: ' + (data.payload || 'unknown'), 'success');
+            }
+        } catch(e) {
+            // ignore
+        }
+    });
+
+    // ===== SEND SYNC TO ALL CONNECTED FILES =====
+    function broadcastSync() {
+        const msg = {
+            type: 'NETPULSE_SYNC',
+            payload: {
+                timestamp: Date.now(),
+                version: '1.0',
+                files: state.connectedFiles.map(f => f.name),
+                apkActive: state.apkPayloadInjected
+            }
+        };
+        // Post to parent
+        try {
+            if (window.parent && window.parent !== window) {
+                window.parent.postMessage(msg, '*');
+            }
+        } catch(e) {}
+        // Post to all iframes
+        const iframes = document.querySelectorAll('iframe');
+        iframes.forEach(f => {
+            try { f.contentWindow.postMessage(msg, '*'); } catch(e) {}
+        });
+        // Broadcast channel
+        try {
+            const bc = new BroadcastChannel('netpulse');
+            bc.postMessage(msg);
+        } catch(e) {}
+        log('Sync broadcast sent to ' + state.connectedFiles.length + ' target(s)', 'info');
+    }
+
+    // ===== DRAG AND DROP SUPPORT =====
+    document.body.addEventListener('dragover', (e) => { e.preventDefault(); });
+    document.body.addEventListener('drop', (e) => {
+        e.preventDefault();
+        const files = e.dataTransfer.files;
+        if (files && files.length > 0) {
+            handleFileUpload(files);
+        }
+    });
+
+    // ===== EVENT BINDINGS =====
+    scanBtn.addEventListener('click', scanAndConnect);
+    injectBtn.addEventListener('click', injectAPK);
+    clearBtn.addEventListener('click', () => {
+        consoleEl.innerHTML = '';
+        log('Console cleared', 'info');
+    });
+
+    fileInput.addEventListener('change', function(e) {
+        handleFileUpload(e.target.files);
+        this.value = '';
+    });
+
+    // Auto-scan every 15 seconds for new files
+    setInterval(() => {
+        if (state.connectedFiles.length > 0) {
+            broadcastSync();
+        }
+    }, 15000);
+
+    // ===== INIT =====
+    log('[system] NetPulse initialized', 'info');
+    log('[system] Scanning for connected HTML files...', 'info');
+
+    // Auto-connect: try to discover immediately
+    setTimeout(() => {
+        scanAndConnect();
+    }, 500);
+
+    // Auto-inject APK after connection
+    setTimeout(() => {
+        if (state.connectedFiles.length > 0 && !state.apkPayloadInjected) {
+            injectAPK();
+        }
+    }, 3000);
+
+    // Expose state globally for debugging
+    window.__netpulse = state;
+
+    console.log('[NetPulse] Multi-File Connector active — APK bridge ready');
+})();
+</script>
+</body>
+</html>
